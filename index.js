@@ -1,46 +1,10 @@
 const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys")
 const P = require("pino")
-const OpenAI = require("openai")
 
-const ai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY
-})
+const { aiReply } = require("./modules/ai")
+const afk = require("./modules/afk")
+const { delay } = require("./modules/delay")
 
-// ===== STATE =====
-let afk = false
-let afkReason = ""
-
-// ===== AI FUNCTION =====
-async function aiReply(text) {
-    try {
-        const res = await ai.chat.completions.create({
-            model: "gpt-4o-mini",
-            messages: [
-                {
-                    role: "system",
-                    content: "Kamu manusia Indonesia, santai, natural, tidak kaku, jawab singkat seperti chat biasa."
-                },
-                {
-                    role: "user",
-                    content: text
-                }
-            ]
-        })
-
-        return res.choices[0].message.content
-
-    } catch (e) {
-        console.log("AI ERROR:", e)
-        return "Bentar ya..."
-    }
-}
-
-// ===== DELAY =====
-function delay(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-// ===== MAIN BOT =====
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState("auth")
 
@@ -63,17 +27,16 @@ async function startBot() {
             msg.message.extendedTextMessage?.text ||
             ""
 
-        // ===== COMMAND (HANYA KAMU) =====
+        // ===== COMMAND =====
         if (isMe) {
             if (text.startsWith(".afk")) {
-                afk = true
-                afkReason = text.replace(".afk", "") || "lagi sibuk"
+                afk.setAFK(text.replace(".afk", ""))
                 await sock.sendMessage(from, { text: "AFK aktif" })
                 return
             }
 
             if (text === ".unafk") {
-                afk = false
+                afk.clearAFK()
                 await sock.sendMessage(from, { text: "AFK off" })
                 return
             }
@@ -84,21 +47,21 @@ async function startBot() {
             }
         }
 
-        // ===== IGNORE MESSAGE SENDIRI =====
+        // ===== IGNORE DIRI SENDIRI =====
         if (isMe) return
 
-        // ===== AFK AUTO REPLY =====
-        if (afk) {
+        // ===== AFK =====
+        if (afk.isAFK()) {
             await sock.sendMessage(from, {
-                text: `Sedang (${afkReason}). Saat ini bot yang menanggapi`
+                text: `Sedang (${afk.getReason()}). Saat ini bot yang menanggapi`
             })
             return
         }
 
-        // ===== DELAY NATURAL =====
+        // ===== DELAY =====
         await delay(2000 + Math.random() * 3000)
 
-        // ===== AI REPLY =====
+        // ===== AI =====
         const reply = await aiReply(text)
         await sock.sendMessage(from, { text: reply })
     })
